@@ -15,8 +15,6 @@ Biochemical Barriers on the Path to Ocean Anoxia?
 Stephen J Giovannoni, Francis Chan, Edward W Davis, Curtis Deutsch, Sarah S Wolf
 doi: https://doi.org/10.1101/2021.05.17.444596
 
-https://www.biorxiv.org/content/10.1101/2021.05.17.444596v1
-
 # Copyright
 
 Oregon State University 2021
