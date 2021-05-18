@@ -1,3 +1,6 @@
-type	count	median	min	max	IQR
-other	259	60	0.3	3600	169.35
-terminal	74	0.365	0.003	20.8	2.39335
+type	assay	count	median	min	max	IQR
+terminal	enzyme	109	0.35	0.003	32	1.9438
+easy	whole cells	84	0.69	0.0022	15	2.23472425
+hard	whole cells	53	20.7	0.63	1000	21.310000000000002
+vhard	whole cells	2	375	350	400	25
+other	enzyme	889	67	0.29000000000000004	330000	199.5

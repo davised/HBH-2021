@@ -1,7 +1,7 @@
 ---
 title: "Hypoxic Barrier Hypothesis"
 author: "Ed Davis"
-date: "2/8/2020"
+date: "4/28/2021"
 output: html_document
 ---
 
@@ -12,14 +12,7 @@ library(RColorBrewer)
 library(cowplot)
 library(taxize)
 library(DT)
-library(ggpval)
-
-reverselog_trans <- function(base = exp(1)) { 
-  trans <- function(x) -log(x, base)
-  inv <- function(x) base^(-x)     
-  scales::trans_new(paste0("reverselog-", format(base)), trans, inv,
-                    scales::log_breaks(base = base),
-                    domain = c(1e-100, Inf)) }
+library(patchwork)
 ```
 
 ```{r load_data}
@@ -93,18 +86,20 @@ loglabels <- c('0.001', '0.01', '0.10', '1.0', '10.0', '100.0', '1000.0')
 oxidases %>%
   ggplot(aes(x = Km, color = type))+
   geom_density() +
-  scale_x_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels) +
+  # scale_x_continuous(trans = reverselog_trans(10),
+  #                    breaks = logbreaks,
+  #                    labels = loglabels) +
+  scale_x_log10(breaks = logbreaks, labels = loglabels) +
   scale_color_manual(values = color_map) +
   geom_vline(xintercept = 25, linetype = 'dashed') +
   theme_bw()
 p1 <- oxidases %>%
   ggplot(aes(x = Km, y = type, fill = type, color = type )) +
   geom_boxplot(outlier.shape = 21) +
-  scale_x_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels) +
+  # scale_x_continuous(trans = reverselog_trans(10),
+  #                    breaks = logbreaks,
+  #                    labels = loglabels) +
+  scale_x_log10(breaks = logbreaks, labels = loglabels) +
   geom_vline(xintercept = 25, linetype = 'dashed') +
   scale_fill_manual(values = color_map,
                     name = 'oxidase type',
@@ -136,9 +131,10 @@ save_plot('oxidase_boxplot_style1.png', p1)
 p1.1 <- oxidases %>%
   ggplot(aes(x = Km, y = type, fill = type), color = 'gray') +
   geom_boxplot(outlier.shape = 21) +
-  scale_x_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels) +
+  # scale_x_continuous(trans = reverselog_trans(10),
+  #                    breaks = logbreaks,
+  #                    labels = loglabels) +
+  scale_x_log10(breaks = logbreaks, labels = loglabels) +
   geom_vline(xintercept = 25, linetype = 'dashed') +
   scale_fill_manual(values = color_map,
                     name = 'oxidase type',
@@ -150,6 +146,7 @@ p1.1 <- oxidases %>%
         axis.title.y = element_blank())
 
 p1.2 <- p1.1 + annotate('text', x = 0.025, y = 0.5, label = 'p-value < 2e-16')
+p1.2
 
 # Box cox transform and natural log transform produce the same result
 oxidases.lmer <- oxidases %>% 
@@ -399,9 +396,122 @@ oxidases.other %>%
 # oxidases %>% pull(Definition_sf) %>% table()
 ```
 
-```{r manuscript analysis}
-oxidases.summary <- oxidases %>% 
+```{r hbh_v4_analysis}
+header <- c('entry', 'enzyme/substrate', 'Km', 'binomial',
+            'type', 'assay', 'reference')
+oxidases <- readr::read_csv('HBH_table_v4.csv', 
+                            col_names = header,
+                            skip = 1,
+                            col_types = 'ffnffff',
+                            ) %>%
+  mutate(type = case_when(
+    type == '1' ~ 'easy',
+    type == '2' ~ 'hard',
+    type == '3' ~ 'vhard',
+    TRUE ~ as.character(type)
+  )) %>%
+  mutate(type = factor(type,
+                       levels = c('terminal', 'easy', 'hard',
+                                  'vhard', 'other')
+                       )
+         )
+write_excel_csv(oxidases, 'Table_S1.xls')
+types <- oxidases %>%
+  pull(type) %>%
+  levels()
+color_map <- c('goldenrod', 'gold', 'royalblue4', 'midnightblue', 'royalblue')
+names(color_map) <- types
+logbreaks <- c(0.001, 0.01, 0.1, 1.0, 10.0,
+               100.0, 1000.0, 10000.0)
+loglabels <- c('0.001', '0.01', '0.10', '1.0',
+               '10.0','100.0', '1000.0', '10000.0')
+
+oxidases %>%
+  filter(assay == 'enzyme') 
+
+p1.1 <- oxidases %>%
+  filter(Km < 20000) %>%
+  filter(assay == 'enzyme') %>%
+  ggplot(aes(x = Km, y = type, fill = type), color = 'gray') +
+  geom_boxplot(outlier.shape = 21) +
+  scale_x_log10(breaks = logbreaks, labels = loglabels) +
+  scale_fill_manual(values = color_map,
+                    name = 'oxidase type',
+                    labels = c('respiratory', 'non-respiratory'),
+                    guide = guide_legend(reverse=TRUE),
+                    aesthetics = c('fill')) +
+  theme_bw() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+p1.1
+
+p1.2 <- p1.1 + annotate('text', x = 1000, y = 0.5, label = 'p-value < 2e-16')
+
+oxidases.lmer <- oxidases %>% 
+  filter(assay == 'enzyme') %>%
   group_by(type) %>%
+  mutate(Km_log = log(Km)) %>%
+  filter(!is.na(binomial))
+
+lmer_res <- lmerTest::lmer(Km_log ~ type * (1 | binomial ),
+                           oxidases.lmer,
+                           REML = F)
+lmerTest::ranova(lmer_res) # Random effect makes fit better
+lmer_res.summary <- lmer_res %>% summary()
+lmer_res.summary # Respiratory and non-respiratory are significantly different
+p1.2
+
+p2.a <- oxidases %>%
+  filter(type != 'vhard') %>%
+  filter(Km < 20000) %>%
+  filter(assay == 'enzyme') %>%
+  ggplot(aes(x = Km, group = type, fill = type)) +
+  geom_density(alpha=.6) +
+  scale_x_log10(breaks = logbreaks, 
+                labels = loglabels,
+                limits = c(min(logbreaks), 15000)) +
+  scale_fill_manual(values = color_map,
+                    name = 'oxidase type',
+                    labels = c('respiratory', 'non-respiratory'),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_bw() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+  ) +
+  ylim(0, 1)
+
+p2.b <- oxidases %>%
+  filter(type != 'vhard') %>%
+  filter(Km < 20000) %>%
+  filter(assay == 'whole cells') %>%
+  ggplot(aes(x = Km, group = type, fill = type)) +
+  geom_density(alpha=.6) +
+  scale_x_log10(breaks = logbreaks, 
+                labels = loglabels,
+                limits = c(min(logbreaks), 15000)) +
+  scale_fill_manual(values = color_map,
+                    name = 'substrate type',
+                    labels = c('labile', 'semi-labile'),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_bw() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+  ) +
+  ylim(0, 1)
+  coord_cartesian(xlim = c(min(logbreaks), max(logbreaks)),
+                  ylim = c(0, 1))
+  
+# Save figures
+(p2.a/p2.b + plot_annotation(tag_levels='A')) %>% 
+  cowplot::save_plot('FigureS1.png', ., base_asp = 1.25, base_height = 5)
+p1.2 %>% cowplot::save_plot('Figure1.png', .)
+
+# Get medians & summary stats
+oxidases.summary <- oxidases %>% 
+  group_by(type, assay) %>%
   summarise(count = n(),
             median = median(Km),
             min = min(Km),
