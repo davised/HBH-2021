@@ -8,402 +8,19 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(RColorBrewer)
-library(cowplot)
-library(taxize)
-library(DT)
 library(patchwork)
 ```
 
-```{r load_data}
-header <- c('entry', 'enzyme', 'Km',
-            'accession', 'KEGG', 'binomial',
-            'type', 'reference')
-
-oxidases <- readxl::read_xlsx('HBH_table_v3.xlsx', 
-                              col_names = header,
-                              skip = 1) %>%
-  mutate(across(c(entry, accession, KEGG, binomial, type), factor))
-ko <- read_delim('ko.csv', ';')
-oxidases <- oxidases %>%
-  mutate(across(c('binomial', 'KEGG'), ~ fct_relevel(.x, sort))) %>%
-  mutate(genus = str_extract(binomial, '[^ ]+')) %>%
-  left_join(ko, 'KEGG')
-taxon_levels <- c('superkingdom', 'phylum', 'class', 'order', 'family', 'genus')
-genera <- oxidases %>% 
-  pull(genus) %>%
-  as.character() %>%
-  sort() %>%
-  unique()
-oxidases <- oxidases %>%
-  mutate(EC = .$definition %>% 
-           str_extract('EC:[^\\]]+') %>% 
-           str_remove('EC:'),
-         EC_f = EC %>%
-           str_extract('[0-9]\\.[0-9]+\\.[0-9]+'),
-         EC_f = ifelse(!is.na(EC_f), paste0(EC_f, '.-'), EC_f),
-         EC_sf = EC %>%
-           str_extract('[0-9]\\.[0-9]+'),
-         EC_sf = ifelse(!is.na(EC_sf), paste0(EC_sf, '.-.-'), EC_sf))
-# taxonomy_map <- genera %>% 
-#   purrr::map(~ myTAI::taxonomy(organism = .x, db = 'ncbi', output = 'classification'))
-# saveRDS(taxonomy_map, 'taxonomy_map.rds')
-
-taxonomy_map <- readRDS('taxonomy_map.rds')
-taxonomy_data <- taxonomy_map %>%
-  purrr::map_dfr(~ .x %>% 
-                   filter(rank %in% taxon_levels) %>% 
-                   select(-id) %>%
-                   pivot_wider(names_from = rank, 
-                               values_from = name)) %>%
-  select(all_of(taxon_levels))
-
-oxidases <- oxidases %>%
-  left_join(taxonomy_data, by = 'genus')
-oxidases <- oxidases %>%
-  mutate(subtype = type) %>%
-  mutate(subtype = case_when(
-    grepl('di[)]*oxygenase', definition, perl=T, ignore.case = T) ~ 'dioxygenase',
-    grepl('mono[-]*oxygenase', definition, perl=T, ignore.case = T) ~ 'monooxygenase',
-    grepl('hydroxylase', definition, perl=T, ignore.case = T) ~ 'hydroxylase',
-    type == 'terminal' ~ 'terminal',
-    TRUE ~ 'other',
-  )) %>%
-  dplyr::distinct()
-```
-
-```{r set_params}
-types <- oxidases %>%
-  pull(type) %>%
-  levels()
-color_map <- c('royalblue', 'goldenrod')
-names(color_map) <- types
-logbreaks <- c(0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0)
-loglabels <- c('0.001', '0.01', '0.10', '1.0', '10.0', '100.0', '1000.0')
-```
-
-```{r graphs}
-oxidases %>%
-  ggplot(aes(x = Km, color = type))+
-  geom_density() +
-  # scale_x_continuous(trans = reverselog_trans(10),
-  #                    breaks = logbreaks,
-  #                    labels = loglabels) +
-  scale_x_log10(breaks = logbreaks, labels = loglabels) +
-  scale_color_manual(values = color_map) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  theme_bw()
-p1 <- oxidases %>%
-  ggplot(aes(x = Km, y = type, fill = type, color = type )) +
-  geom_boxplot(outlier.shape = 21) +
-  # scale_x_continuous(trans = reverselog_trans(10),
-  #                    breaks = logbreaks,
-  #                    labels = loglabels) +
-  scale_x_log10(breaks = logbreaks, labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_fill_manual(values = color_map,
-                    name = 'oxidase type',
-                    guide = guide_legend(reverse=TRUE),
-                    aesthetics = c('color', 'fill')) +
-  theme_minimal() +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank(),
-        # legend.title = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(colour="darkgrey"),
-        axis.ticks.x = element_line(colour="darkgrey"),
-        panel.grid.minor = element_blank(),
-        panel.grid.major.y = element_blank(),
-        ) +
-  stat_summary(geom = "crossbar",
-               show.legend = F,
-               width=0.65,
-               fatten=0,
-               color="white",
-               fun.data = function(x) {
-                 return(c(y=median(x),
-                          ymin=median(x),
-                          ymax=median(x)))
-                 }) +
-  theme(legend.position = c(0.20, 0.75))
-save_plot('oxidase_boxplot_style1.png', p1)
-
-p1.1 <- oxidases %>%
-  ggplot(aes(x = Km, y = type, fill = type), color = 'gray') +
-  geom_boxplot(outlier.shape = 21) +
-  # scale_x_continuous(trans = reverselog_trans(10),
-  #                    breaks = logbreaks,
-  #                    labels = loglabels) +
-  scale_x_log10(breaks = logbreaks, labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_fill_manual(values = color_map,
-                    name = 'oxidase type',
-                    guide = guide_legend(reverse=TRUE),
-                    aesthetics = c('fill')) +
-  theme_bw() +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.title.y = element_blank())
-
-p1.2 <- p1.1 + annotate('text', x = 0.025, y = 0.5, label = 'p-value < 2e-16')
-p1.2
-
-# Box cox transform and natural log transform produce the same result
-oxidases.lmer <- oxidases %>% 
-  group_by(type) %>%
-  mutate(Km_bc = car::bcPower(Km, 0),
-         Km_log = log(Km)) %>%
-  filter(!is.na(accession))
-oxidases.lmer %>% select(Km_bc, Km_log)
-oxidases.lmer %>% filter(type == 'terminal')  %>%
-  ggplot(aes(sample = Km_bc)) + stat_qq() + stat_qq_line()
-
-lmer_res <- lmerTest::lmer(Km_log ~ type * (1 | accession ),
-                           oxidases.lmer,
-                           REML = F)
-lmerTest::ranova(lmer_res) # Random effect makes fit better
-lmer_res.summary <- lmer_res %>% summary()
-lmer_res.summary # Terminal & Other are significantly different fits
-
-
-p1.1 %>% save_plot('oxidase_boxplot_style2.png', .)
-p1.2 %>% save_plot('oxidase_boxplot_style2_pval.png', .)
-p1.2 %>% save_plot('oxidase_boxplot_style2_pval.svg', .)
-p_phylum <- oxidases %>% ggplot(aes(y = Km, x = phylum, fill = phylum)) +
-  geom_boxplot() +
-  facet_wrap(~type, ncol=1, scales = 'free_y') +
-  scale_y_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels) + 
-  scale_fill_brewer(palette = 'Set1') + 
-  coord_flip() + 
-  cowplot::theme_cowplot()
-cowplot::save_plot('boxplot_phylum.png', p_phylum, base_height=5)
-
-message('Figure 1')
-p1.2
-```
-
-```{r plots}
-p2 <- oxidases %>%
-  ggplot(aes(x = Km, group = type, fill = type)) +
-  geom_density(alpha=.6) +
-  scale_x_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_fill_manual(values = color_map,
-                    name = 'oxidase type',
-                    guide = guide_legend(reverse=TRUE)) +
-  theme_bw() +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.title.y = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.grid.major.y = element_blank(),
-        legend.position = c(0.85,0.75),
-        legend.box.background = element_rect(color = 'white'),
-  )
-p3 <- oxidases %>%
-  ggplot(aes(x = Km, y = type, fill = type)) +
-  ggridges::geom_density_ridges(alpha=.75, rel_min_height = 0.01) +
-  scale_x_continuous(trans = reverselog_trans(10),
-                     breaks = logbreaks,
-                     labels = loglabels,
-                     expand = c(0,0)) +
-  scale_y_discrete(expand = c(0,0)) +
-  coord_cartesian(clip = 'off') +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_fill_manual(values = color_map,
-                    name = 'oxidase type',
-                    guide = guide_legend(reverse=TRUE)) +
-  ggridges::theme_ridges() +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.title.y = element_blank(),
-        legend.position = c(0.05,0.85),
-        legend.box.background = element_rect(color = 'white'))
-p2 %>% save_plot('oxidase_density_plot_cb.png', .)
-p3 %>% save_plot('oxidase_ridge_plot.png', .)
-p2
-p3
-```
-
-```{r plotly.1, fig.height=10}
-(oxidases %>%
-  ggplot(aes(y = genus, x = Km, color = type, label = KEGG, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_color_manual(values = color_map) +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-```{r plots_cont}
-oxidases %>%
-  filter(!is.na(superkingdom)) %>%
-  ggplot(aes(y = superkingdom, x = Km, fill = type)) +
-  geom_boxplot() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_fill_manual(values = color_map) +
-  theme_bw()
-```
-
-```{r plotly.2, fig.height=10}
-oxidases %>%
-  filter(type == 'terminal') %>%
-  pull(definition) %>% 
-  table()
-(oxidases %>%
-  ggplot(aes(y = KEGG, x = Km, color = type, label = binomial, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_color_manual(values = color_map) +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-```{r plotly.3, fig.height=5, fig.width=10}
-oxidases %>%
-  filter(type == 'terminal') %>%
-  pull(definition) %>%
-  table()
-(oxidases %>%
-   filter(type == 'terminal') %>%
-  ggplot(aes(y = definition, x = Km, color = class, label = binomial, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_color_brewer(type = 'qual') +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-```{r essentials}
-headers <- c('KEGG', 'gene_name', 'annotation', 'E_Score', 'P_Score')
-enzclass.sf <- read_tsv('enzclass.tsv', col_names = c('EC_sf', 'Definition_sf'), skip = 1)
-enzclass.f <- read_tsv('enzclass.tsv', col_names = c('EC_f', 'Definition_f'), skip = 1)
-oxidases <- oxidases %>%
-  left_join(enzclass.sf, by = 'EC_sf') %>%
-  left_join(enzclass.f, by = 'EC_f') 
-oxidases %>%
-  datatable(extensions = 'Buttons',
-          options = list(dom = 'Blfrtip',
-                         scrollX = TRUE,
-                         buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-                         lengthMenu = list(c(10,25,50,-1),
-                                           c(10,25,50,"All"))),
-          rownames = FALSE)
-```
-
-
-```{r plotly.4, fig.height=10}
-EC_count <- oxidases %>%
-  pull(EC_sf) %>%
-  n_distinct()
-
-(oxidases %>%
-   filter(type == 'other') %>%
-  ggplot(aes(y = KEGG, x = Km, color = EC_sf, label = binomial, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_color_manual(values = colorRampPalette(brewer.pal(8, 'Set1'))(EC_count), 
-                     na.value = '#000000') +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-
-```{r plotly.5, fig.height=10}
-EC_count <- oxidases %>%
-  pull(EC_f) %>%
-  n_distinct()
-
-oxidases %>%
-  select(EC_f, Definition_f) %>%
-  group_by(EC_f) %>%
-  count()
-
-(oxidases %>%
-   filter(type == 'other') %>%
-  ggplot(aes(y = KEGG, x = Km, color = EC_f, label = binomial, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  scale_color_manual(values = colorRampPalette(brewer.pal(8, 'Set1'))(EC_count), 
-                     na.value = '#000000') +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-```{r plotly.6, fig.height=10}
-source('./xgfs_colors.R')
-oxidases %>% select(enzyme, definition, subtype)
-subtypes <- oxidases %>%
-  pull(subtype) %>%
-  as.factor() %>%
-  levels()
-
-oxidases.other <- oxidases %>%
-  filter(subtype != 'terminal') %>%
-  mutate(subtype = factor(subtype))
-subtype_labels.df <- oxidases.other %>%
-  count(subtype) %>%
-  mutate(ylabels = paste0(subtype, ' (n=', n, ')'))
-subtype_labels <- subtype_labels.df$ylabels
-names(subtype_labels) <- subtype_labels.df$subtype
-(oxidases.other %>%
-  ggplot(aes(y = KEGG, x = Km, color = subtype, label = binomial, text = definition)) +
-  geom_point() +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  # scale_color_manual(values = xgfs.6) +
-  scale_color_manual(values = cb_pal.12) +
-  theme_bw()) %>%
-  plotly::ggplotly()
-```
-
-```{r plotly.7, fig.height=3.71, dev='png'}
-oxidases.other %>%
-  ggplot(aes(y = subtype, x = Km, fill = subtype)) +
-  scale_y_discrete(limits=rev(levels(oxidases.other$subtype[1:4])),
-                   labels=subtype_labels[1:4]) +
-  geom_boxplot(color='black') +
-  scale_x_continuous(trans = reverselog_trans(10), 
-                     breaks = logbreaks,
-                     labels = loglabels) +
-  geom_vline(xintercept = 25, linetype = 'dashed') +
-  theme_bw() +
-  scale_fill_manual(values = cb_pal.12)
-# oxidases %>% pull(Definition_sf) %>% table()
-```
-
 ```{r hbh_v4_analysis}
+# Load data
 header <- c('entry', 'enzyme/substrate', 'Km', 'binomial',
             'type', 'assay', 'reference')
 oxidases <- readr::read_csv('HBH_table_v4.csv', 
                             col_names = header,
                             skip = 1,
                             col_types = 'ffnffff',
-                            ) %>%
+                            ) # %>%
+oxidases <- oxidases %>%
   mutate(type = case_when(
     type == '1' ~ 'easy',
     type == '2' ~ 'hard',
@@ -415,7 +32,11 @@ oxidases <- readr::read_csv('HBH_table_v4.csv',
                                   'vhard', 'other')
                        )
          )
+
+# Convert to excel
 write_excel_csv(oxidases, 'Table_S1.xls')
+
+# Set up colors and scales
 types <- oxidases %>%
   pull(type) %>%
   levels()
@@ -425,9 +46,6 @@ logbreaks <- c(0.001, 0.01, 0.1, 1.0, 10.0,
                100.0, 1000.0, 10000.0)
 loglabels <- c('0.001', '0.01', '0.10', '1.0',
                '10.0','100.0', '1000.0', '10000.0')
-
-oxidases %>%
-  filter(assay == 'enzyme') 
 
 p1.1 <- oxidases %>%
   filter(Km < 20000) %>%
@@ -444,9 +62,6 @@ p1.1 <- oxidases %>%
   theme(axis.ticks.y = element_blank(),
         axis.text.y = element_blank(),
         axis.title.y = element_blank())
-p1.1
-
-p1.2 <- p1.1 + annotate('text', x = 1000, y = 0.5, label = 'p-value < 2e-16')
 
 oxidases.lmer <- oxidases %>% 
   filter(assay == 'enzyme') %>%
@@ -454,12 +69,15 @@ oxidases.lmer <- oxidases %>%
   mutate(Km_log = log(Km)) %>%
   filter(!is.na(binomial))
 
+# Run linear model controlling for repeated measures
 lmer_res <- lmerTest::lmer(Km_log ~ type * (1 | binomial ),
                            oxidases.lmer,
                            REML = F)
 lmerTest::ranova(lmer_res) # Random effect makes fit better
 lmer_res.summary <- lmer_res %>% summary()
 lmer_res.summary # Respiratory and non-respiratory are significantly different
+
+p1.2 <- p1.1 + annotate('text', x = 1000, y = 0.5, label = 'p-value < 2e-16')
 p1.2
 
 p2.a <- oxidases %>%
@@ -501,8 +119,6 @@ p2.b <- oxidases %>%
         axis.title.y = element_blank(),
   ) +
   ylim(0, 1)
-  coord_cartesian(xlim = c(min(logbreaks), max(logbreaks)),
-                  ylim = c(0, 1))
   
 # Save figures
 (p2.a/p2.b + plot_annotation(tag_levels='A')) %>% 
@@ -518,7 +134,8 @@ oxidases.summary <- oxidases %>%
             max = max(Km),
             IQR = IQR(Km),
   )
+
 oxidases.summary %>%
-  write_tsv('oxidase_summary.tsv')
+  write_excel_csv('oxidase_summary.xls')
 oxidases.summary
 ```
