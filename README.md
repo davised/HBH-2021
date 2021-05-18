@@ -1,13 +1,21 @@
 # HBH-2021
-Hypoxic barrier hypothesis manuscript data analysis
+Hypoxic barrier hypothesis manuscript data analysis - Figure 1 and Figure S1
 
-Check out [the Rmd](./HBH.Rmd) or [the knitted html](./HBH.html) for the
+Examine [the Rmd](./HBH.Rmd) or [the knitted html](./HBH.html) for the
 analysis.
 
-The analysis included in this repo is far more than what was prepared for the
-manuscript. We have EC number and KO ID analysis that yielded little additional
-input to our hypothesis. Therefore, we scaled back the analysis to just the
-terminal oxidases vs other oxidases.
+The git repo history shows additional analysis that was done on an early subset
+of the data, including examining KO, KEGG, and EC numbers. As that preliminary
+analysis did not uncover interesting correlations, we did not continue that
+analysis for the full dataset.
+
+# Reference
+
+Biochemical Barriers on the Path to Ocean Anoxia?
+Stephen J Giovannoni, Francis Chan, Edward W Davis, Curtis Deutsch, Sarah S Wolf
+doi: https://doi.org/10.1101/2021.05.17.444596
+
+https://www.biorxiv.org/content/10.1101/2021.05.17.444596v1
 
 # Copyright
 

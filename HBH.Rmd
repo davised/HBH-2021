@@ -121,7 +121,9 @@ p2.b <- oxidases %>%
   ylim(0, 1)
   
 # Save figures
-(p2.a/p2.b + plot_annotation(tag_levels='A')) %>% 
+p2 <- p2.a/p2.b + plot_annotation(tag_levels='A')
+p2
+p2 %>% 
   cowplot::save_plot('FigureS1.png', ., base_asp = 1.25, base_height = 5)
 p1.2 %>% cowplot::save_plot('Figure1.png', .)
 
