@@ -46,6 +46,9 @@ logbreaks <- c(0.001, 0.01, 0.1, 1.0, 10.0,
                100.0, 1000.0, 10000.0)
 loglabels <- c('0.001', '0.01', '0.10', '1.0',
                '10.0','100.0', '1000.0', '10000.0')
+loglabels <- c('0.001', '0.01', '0.10', '1.0',
+               '10.0','100.0', '1000.0', '10000.0')
+# loglabels %>% as.numeric() %>% formatC(format= "e", digits = 1)
 
 p1.1 <- oxidases %>%
   filter(Km < 20000) %>%
@@ -61,7 +64,27 @@ p1.1 <- oxidases %>%
   theme_bw() +
   theme(axis.ticks.y = element_blank(),
         axis.text.y = element_blank(),
-        axis.title.y = element_blank())
+        axis.title.y = element_blank()) +
+  xlab("Km (µM)")
+
+p1x <- oxidases %>%
+  filter(Km < 20000) %>%
+  filter(assay == 'enzyme') %>%
+  ggplot(aes(x = type, y = Km, fill = type), color = 'gray') +
+  # geom_boxplot(outlier.shape = 21) +
+  geom_violin() +
+  geom_jitter() +
+  scale_y_log10(breaks = logbreaks, labels = loglabels) +
+  scale_fill_manual(values = color_map,
+                    name = 'oxidase type',
+                    labels = c('respiratory', 'non-respiratory'),
+                    guide = guide_legend(reverse=TRUE),
+                    aesthetics = c('fill')) +
+  theme_bw() +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  ylab("Km (µM)")
 
 oxidases.lmer <- oxidases %>% 
   filter(assay == 'enzyme') %>%
@@ -77,8 +100,12 @@ lmerTest::ranova(lmer_res) # Random effect makes fit better
 lmer_res.summary <- lmer_res %>% summary()
 lmer_res.summary # Respiratory and non-respiratory are significantly different
 
+equatiomatic::extract_eq(lmer_res)
+
 p1.2 <- p1.1 + annotate('text', x = 1000, y = 0.5, label = 'p-value < 2e-16')
 p1.2
+p1x.2 <- p1x + annotate('text', x = 2, y = 0.005, label = 'p-value < 2e-16')
+p1x.2
 
 p2.a <- oxidases %>%
   filter(type != 'vhard') %>%
@@ -98,7 +125,8 @@ p2.a <- oxidases %>%
         axis.text.y = element_blank(),
         axis.title.y = element_blank(),
   ) +
-  ylim(0, 1)
+  ylim(0, 1) +
+  xlab("Km (µM)")
 
 p2.b <- oxidases %>%
   filter(type != 'vhard') %>%
@@ -118,14 +146,21 @@ p2.b <- oxidases %>%
         axis.text.y = element_blank(),
         axis.title.y = element_blank(),
   ) +
-  ylim(0, 1)
+  ylim(0, 1) +
+  xlab("Km (µM)")
   
 # Save figures
-p2 <- p2.a/p2.b + plot_annotation(tag_levels='A')
-p2
-p2 %>% 
-  cowplot::save_plot('FigureS1.png', ., base_asp = 1.25, base_height = 5)
-p1.2 %>% cowplot::save_plot('Figure1.png', .)
+p2 <- (p2.a + theme(text = element_text(size = 16)) + guides(x = guide_axis(angle = -45)))/
+  (p2.b + theme(text = element_text(size = 16)) + guides(x = guide_axis(angle = -45))) + 
+  plot_annotation(tag_levels='A')
+p2 %>%
+  cowplot::save_plot('FigureS1.tiff', ., base_width = 6.875, base_asp = 1.25, base_height = NULL)
+(p1.2 +
+    theme(text = element_text(size = 16))) %>%
+  cowplot::save_plot('Figure1.tiff', ., base_width = 6.875)
+(p1x.2 +
+    theme(text = element_text(size = 16))) %>%
+  cowplot::save_plot('Figure1x.tiff', ., base_width = 6.875)
 
 # Get medians & summary stats
 oxidases.summary <- oxidases %>% 
